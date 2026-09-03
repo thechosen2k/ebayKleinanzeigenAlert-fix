@@ -21,26 +21,35 @@ class EbayItem:
 
     @property
     def link(self) -> str:
-        if self.contents.a.get('href'):
-            return settings.URL_BASE + self.contents.a.get('href')
+        href = self.contents.get('data-href') or (self.contents.a.get('href') if self.contents.a else None)
+        if href:
+            return settings.URL_BASE + href
         else:
             return "No url found."
 
     @property
     def title(self) -> str:
-        return self._find_text_in_class("ellipsis") or "No Title"
+        heading = self.contents.find("h3")
+        if heading:
+            return heading.get_text(strip=True)
+        return "No Title"
 
     @property
     def price(self) -> str:
-        return self._find_text_in_class("aditem-main--middle--price-shipping--price") or "No Price"
+        for p in self.contents.find_all("p"):
+            text = p.get_text(strip=True)
+            if "€" in text:
+                return text
+        return "No Price"
 
     @property
     def description(self) -> str:
-        description = self._find_text_in_class("aditem-main--middle--description")
-        if description:
-            return description.replace("\n", " ")
-        else:
-            return "No Description"
+        paragraphs = self.contents.find_all("p")
+        for p in paragraphs:
+            text = p.get_text(strip=True)
+            if text and "€" not in text:
+                return text.replace("\n", " ")
+        return "No Description"
 
     @property
     def id(self) -> int:
@@ -57,21 +66,18 @@ class EbayItem:
     def __repr__(self):
         return '{}; {}; {}'.format(self.title, self.city, self.distance)
 
-    def _find_text_in_class(self, class_name: str):
-        found = self.contents.find(attrs={"class": f"{class_name}"})
-        if found:
-            return found.text.strip()
-
     def _extract_city_distance(self):
-        details_list = self._find_text_in_class("aditem-main--top--left")
-        if details_list:
-            split_detail = details_list.split("\n")
-            if len(split_detail) == 1:
-                self._city = split_detail[0]
-            else:
-                split_detail = [detail.strip() for detail in split_detail]
-                self._city = split_detail[0]
-                self._distance = split_detail[1]
+        location_icon = self.contents.find(attrs={"data-title": "locationOutline"})
+        if not location_icon:
+            return
+        location_wrapper = location_icon.parent
+        if not location_wrapper:
+            return
+        details_text = location_wrapper.get_text(" ", strip=True)
+        match = re.search(r"(.*?)(?:\s*[·,]?\s*(\d+(?:[.,]\d+)?\s*km))?$", details_text)
+        if match:
+            self._city = match.group(1).strip() or None
+            self._distance = match.group(2)
 
 
 class EbayItemFactory:
@@ -90,6 +96,7 @@ class EbayItemFactory:
         }
         response = requests.get(self.link, headers=custom_header)
         if response and response.status_code == 200:
+            response.encoding = response.apparent_encoding
             return response.text
         else:
             print(f"<< webpage fetching error for url: {self.link}")
@@ -100,6 +107,5 @@ class EbayItemFactory:
         soup = BeautifulSoup(cleaned_response, "html.parser")
         result = soup.find(attrs={"id": "srchrslt-adtable"})
         if result:
-            for item in result.find_all(attrs={"class": re.compile("ad-listitem.*")}):
-                if item.article:
-                    yield item.article
+            for item in result.find_all("article", attrs={"data-adid": True}):
+                yield item
