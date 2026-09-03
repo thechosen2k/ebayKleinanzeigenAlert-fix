@@ -2,9 +2,12 @@ import sys
 from random import randint
 from time import sleep
 
+import requests
 from sqlalchemy.orm import Session
 
 from ebAlert import create_logger
+from ebAlert.core import healthcheck
+from ebAlert.core.config import settings
 from ebAlert.crud.base import crud_link, get_session
 from ebAlert.crud.post import crud_post
 from ebAlert.ebayscrapping import ebayclass
@@ -71,7 +74,7 @@ def links(show, remove, clear, url, init):
             else:
                 crud_link.create({"link": url}, db)
                 ebay_items = ebayclass.EbayItemFactory(url)
-                crud_post.add_items_to_db(db, ebay_items.item_list)
+                crud_post.add_items_to_db(db=db, items=ebay_items.item_list)
                 print("<< Link and post added to the database")
         elif init:
             print(">> Initializing database")
@@ -82,13 +85,22 @@ def links(show, remove, clear, url, init):
 def get_all_post(db: Session, telegram_message=False):
     links = crud_link.get_all(db=db)
     if links:
+        session = requests.Session()
         for link_model in links:
             print("Processing link - id: {} - link: {} ".format(link_model.id, link_model.link))
-            post_factory = ebayclass.EbayItemFactory(link_model.link)
-            items = crud_post.add_items_to_db(db=db, items=post_factory.item_list)
+            post_factory = ebayclass.EbayItemFactory(link_model.link, session=session)
+            new_items, price_drops = crud_post.add_items_to_db(db=db, items=post_factory.item_list)
             if telegram_message:
-                for item in items:
+                for item in new_items:
                     telegram.send_formated_message(item)
+                for item, old_price in price_drops:
+                    telegram.send_price_drop_message(item, old_price)
+            if healthcheck.record_result(link_model.id, post_factory.raw_item_count, post_factory.page_fetched):
+                telegram.send_message(
+                    f"Achtung: Link {link_model.id} ({link_model.link}) liefert seit "
+                    f"{settings.HEALTH_CHECK_THRESHOLD} Laeufen in Folge 0 Treffer trotz "
+                    f"erfolgreichem Abruf. Vermutlich hat sich die Seitenstruktur geaendert."
+                )
             sleep(randint(0, 40)/10)
 
 

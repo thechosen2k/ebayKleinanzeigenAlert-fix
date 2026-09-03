@@ -1,5 +1,5 @@
 import re
-from typing import Generator
+from typing import Generator, Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -9,6 +9,22 @@ from ebAlert import create_logger
 from ebAlert.core.config import settings
 
 log = create_logger(__name__)
+
+WANTED_AD_PATTERN = re.compile(r"^\s*suche\b", re.IGNORECASE)
+
+
+def parse_price(price: str) -> Optional[float]:
+    """Extract a numeric EUR amount from a price string like '349 €' or '2.000 € VB'."""
+    if not price:
+        return None
+    match = re.search(r"([\d.,]+)\s*€", price)
+    if not match:
+        return None
+    normalized = match.group(1).replace(".", "").replace(",", ".")
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
 
 
 class EbayItem:
@@ -56,6 +72,11 @@ class EbayItem:
         return int(self.contents.get('data-adid')) or 0
 
     @property
+    def is_wanted_ad(self) -> bool:
+        """True for 'Gesuch' posts (someone looking to buy) rather than actual offers."""
+        return bool(WANTED_AD_PATTERN.match(self.title))
+
+    @property
     def city(self):
         return self._city or "No city"
 
@@ -81,14 +102,22 @@ class EbayItem:
 
 
 class EbayItemFactory:
-    def __init__(self, link):
+    def __init__(self, link, session: requests.Session = None):
         self.link = link
+        self.session = session or requests.Session()
         web_page = self.get_webpage()
+        self.page_fetched = web_page is not None
         if web_page:
-            self.item_list = [EbayItem(article) for article in self.extract_item_from_page(web_page)]
-            if not self.item_list:
+            raw_items = [EbayItem(article) for article in self.extract_item_from_page(web_page)]
+            self.raw_item_count = len(raw_items)
+            if not raw_items:
                 print(f"<< no items extracted for url: {self.link} - page structure may have changed")
+            if settings.FILTER_WANTED_ADS:
+                self.item_list = [item for item in raw_items if not item.is_wanted_ad]
+            else:
+                self.item_list = raw_items
         else:
+            self.raw_item_count = 0
             self.item_list = []
 
     def get_webpage(self) -> str:
@@ -97,7 +126,7 @@ class EbayItemFactory:
                            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         }
         try:
-            response = requests.get(self.link, headers=custom_header, timeout=15)
+            response = self.session.get(self.link, headers=custom_header, timeout=15)
         except requests.RequestException as exc:
             print(f"<< webpage fetching error for url: {self.link} ({exc})")
             return None

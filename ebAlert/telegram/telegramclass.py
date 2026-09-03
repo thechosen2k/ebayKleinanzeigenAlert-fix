@@ -26,5 +26,10 @@ class SendingClass:
         url = f'<a href="{item.link}">{item.link}</a>'
         self.send_message(message + url)
 
+    def send_price_drop_message(self, item: EbayItem, old_price: float):
+        message = f"\U0001F4B6 Preissenkung: {item.title}\n\nNeuer Preis: {item.price} (vorher: {old_price:.2f} €)\n\n"
+        url = f'<a href="{item.link}">{item.link}</a>'
+        self.send_message(message + url)
+
 
 telegram = SendingClass()
