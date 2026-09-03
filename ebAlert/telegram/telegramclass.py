@@ -5,21 +5,21 @@ from ebAlert.ebayscrapping.ebayclass import EbayItem
 from urllib.parse import urlencode
 
 
-def send_message(message):
-    send_text_url = settings.TELEGRAM_API_URL + message + ""
-    response = requests.get(send_text_url)
-    return response.json()['ok']
-
-
 class SendingClass:
 
     def send_message(self, message):
         message_encoded = urlencode({"text": message})
-        sending_url = settings.TELEGRAM_API_URL + message_encoded + ""
-        response = requests.get(sending_url)
+        sending_url = settings.TELEGRAM_API_URL + message_encoded
+        try:
+            response = requests.get(sending_url, timeout=15)
+        except requests.RequestException as exc:
+            print(f"<< telegram message failed to send: {exc}")
+            return False
 
-        if response == 200:
-            return response.json()["ok"]
+        if response.status_code == 200:
+            return response.json().get("ok", False)
+        print(f"<< telegram message failed to send (status {response.status_code})")
+        return False
 
     def send_formated_message(self, item: EbayItem):
         message = f"{item.title}\n\n{item.price} ({item.city})\n\n"

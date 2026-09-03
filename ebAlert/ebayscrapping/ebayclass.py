@@ -83,23 +83,29 @@ class EbayItem:
 class EbayItemFactory:
     def __init__(self, link):
         self.link = link
-        web_pages = self.get_webpage()
-        if web_pages:
-            articles = self.extract_item_from_page(self.get_webpage())
-            self.item_list = [EbayItem(article) for article in articles]
+        web_page = self.get_webpage()
+        if web_page:
+            self.item_list = [EbayItem(article) for article in self.extract_item_from_page(web_page)]
+            if not self.item_list:
+                print(f"<< no items extracted for url: {self.link} - page structure may have changed")
         else:
             self.item_list = []
 
     def get_webpage(self) -> str:
         custom_header = {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0"
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         }
-        response = requests.get(self.link, headers=custom_header)
-        if response and response.status_code == 200:
+        try:
+            response = requests.get(self.link, headers=custom_header, timeout=15)
+        except requests.RequestException as exc:
+            print(f"<< webpage fetching error for url: {self.link} ({exc})")
+            return None
+        if response.status_code == 200:
             response.encoding = response.apparent_encoding
             return response.text
         else:
-            print(f"<< webpage fetching error for url: {self.link}")
+            print(f"<< webpage fetching error for url: {self.link} (status {response.status_code})")
 
     @staticmethod
     def extract_item_from_page(text: str) -> Generator:
