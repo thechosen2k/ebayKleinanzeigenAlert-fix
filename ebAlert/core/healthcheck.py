@@ -23,26 +23,34 @@ def _save(data: dict) -> None:
         json.dump(data, f)
 
 
-def record_result(link_id: int, item_count: int, page_fetched: bool) -> bool:
+def record_run(total_fetched: int, total_empty: int) -> bool:
     """
-    Track consecutive successful-but-empty fetches for a link.
-    Returns True exactly once when the link crosses HEALTH_CHECK_THRESHOLD
-    consecutive empty results, so the caller can send a single alert.
+    Call once per full run with the aggregate results across all links.
+
+    A single niche search can legitimately return zero items for days, so
+    that's not a useful per-link signal. A site redesign, on the other hand,
+    breaks the same selectors on every search page at once - so the useful
+    signal is the *fraction* of links that came back empty in one run.
+
+    Returns True exactly once when that fraction crosses
+    HEALTH_EMPTY_RATIO_THRESHOLD, so the caller can send a single alert
+    instead of one every run while the problem persists.
     """
-    if not page_fetched:
-        # A fetch error (network/HTTP) is not a selector-breakage signal, ignore it here.
+    if total_fetched < settings.HEALTH_MIN_LINKS:
         return False
 
+    ratio = total_empty / total_fetched
     data = _load()
-    key = str(link_id)
+    already_alerted = data.get("alerted", False)
 
-    if item_count == 0:
-        count = data.get(key, 0) + 1
-        data[key] = count
+    if ratio >= settings.HEALTH_EMPTY_RATIO_THRESHOLD:
+        if already_alerted:
+            return False
+        data["alerted"] = True
         _save(data)
-        return count == settings.HEALTH_CHECK_THRESHOLD
+        return True
 
-    if key in data:
-        del data[key]
+    if already_alerted:
+        data["alerted"] = False
         _save(data)
     return False

@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from ebAlert import create_logger
 from ebAlert.core import healthcheck
-from ebAlert.core.config import settings
 from ebAlert.crud.base import crud_link, get_session
 from ebAlert.crud.post import crud_post
 from ebAlert.ebayscrapping import ebayclass
@@ -86,22 +85,27 @@ def get_all_post(db: Session, telegram_message=False):
     links = crud_link.get_all(db=db)
     if links:
         session = requests.Session()
+        total_fetched = 0
+        total_empty = 0
         for link_model in links:
             print("Processing link - id: {} - link: {} ".format(link_model.id, link_model.link))
             post_factory = ebayclass.EbayItemFactory(link_model.link, session=session)
+            if post_factory.page_fetched:
+                total_fetched += 1
+                if post_factory.raw_item_count == 0:
+                    total_empty += 1
             new_items, price_drops = crud_post.add_items_to_db(db=db, items=post_factory.item_list)
             if telegram_message:
                 for item in new_items:
                     telegram.send_formated_message(item)
                 for item, old_price in price_drops:
                     telegram.send_price_drop_message(item, old_price)
-            if healthcheck.record_result(link_model.id, post_factory.raw_item_count, post_factory.page_fetched):
-                telegram.send_message(
-                    f"Achtung: Link {link_model.id} ({link_model.link}) liefert seit "
-                    f"{settings.HEALTH_CHECK_THRESHOLD} Laeufen in Folge 0 Treffer trotz "
-                    f"erfolgreichem Abruf. Vermutlich hat sich die Seitenstruktur geaendert."
-                )
             sleep(randint(0, 40)/10)
+        if healthcheck.record_run(total_fetched, total_empty):
+            telegram.send_message(
+                f"Achtung: {total_empty} von {total_fetched} Links liefern in diesem Lauf 0 Treffer. "
+                f"Vermutlich hat sich die Kleinanzeigen-Seitenstruktur geaendert."
+            )
 
 
 if __name__ == "__main__":
