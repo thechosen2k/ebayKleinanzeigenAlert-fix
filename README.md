@@ -23,7 +23,7 @@ No API required - Only URL of the query.
    1. Open the chat with [@RawDataBot](https://t.me/RawDataBot)
    2. Enter `/start`
    3. Copy the message ID. Either from `message/from/id` or `message/chat/id`. The message ID looks like `417417807`.
-5. Set environment variables TOKEN and CHAT_ID. Or hard code your token & message ID in `ebAlert/core/config.py`.
+5. Set environment variables TOKEN and CHAT_ID. Or put them in `~/.ebalert.env` (one `KEY=VALUE` per line) - this file lives outside the repo, so redeploying the code never touches it. (Hardcoding them directly in `ebAlert/core/config.py` still works but gets overwritten on every code update.)
 6. Install the dependencies
    ```sh
    pip install .

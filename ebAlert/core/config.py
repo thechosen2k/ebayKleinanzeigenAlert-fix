@@ -1,6 +1,16 @@
 import os
 import logging
 
+# Secrets live outside the repo/deploy tree so a code deploy never clobbers them.
+_env_file = os.path.join(os.path.expanduser("~"), ".ebalert.env")
+if os.path.exists(_env_file):
+    with open(_env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+
 
 class Settings:
     TOKEN = os.environ.get("TOKEN") or "Your_secret_key"
